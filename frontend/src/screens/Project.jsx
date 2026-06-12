@@ -8,6 +8,7 @@ import hljs from 'highlight.js'
 import { getWebContainer } from '../config/webContainer'
 import { io as socketIO } from 'socket.io-client'
 import Editor from '@monaco-editor/react'
+import { disconnectSocket } from '../config/socket'
 
 function SyntaxHighlightedCode(props) {
     const ref = useRef(null)
@@ -85,6 +86,7 @@ const Project = () => {
     const termSocketRef = useRef(null)
     const sessionId = useRef(null)
     const saveDebounceRef = useRef(null)
+    const messageSendLockRef = useRef(false)
 
     async function sendInvite(e) {
         e.preventDefault()
@@ -105,11 +107,18 @@ const Project = () => {
         }
     }
 
-    const send = () => {
-        if (!message.trim()) return
+    const send = (e) => {
+        e?.preventDefault?.()
+        const text = message.trim()
+        if (!text || messageSendLockRef.current) return
+
+        messageSendLockRef.current = true
         sendMessage('project-message', { message, sender: user })
-        setMessages(prev => [ ...prev, { sender: user, message } ])
+        setMessages(prev => [ ...prev, { sender: user, message: text } ])
         setMessage('')
+        setTimeout(() => {
+            messageSendLockRef.current = false
+        }, 250)
     }
 
     function WriteAiMessage(msg) {
@@ -167,7 +176,7 @@ const Project = () => {
     }
 
     useEffect(() => {
-        initializeSocket(project._id)
+        const socketCleanup = initializeSocket(project._id)
 
         if (!webContainer) {
             getWebContainer().then(c => {
@@ -175,7 +184,7 @@ const Project = () => {
             }).catch(console.log)
         }
 
-        receiveMessage('project-message', data => {
+        const offProjectMessage = receiveMessage('project-message', data => {
             if (data.sender._id === 'ai') {
                 try {
                     const parsed = JSON.parse(data.message)
@@ -207,6 +216,12 @@ const Project = () => {
 
         // Load supported runtimes for the language selector
         axios.get('/execute/runtimes').then(res => setRuntimes(res.data)).catch(console.log)
+
+        return () => {
+            offProjectMessage?.()
+            socketCleanup?.disconnect?.()
+            disconnectSocket()
+        }
     }, [])
 
     useEffect(() => {
@@ -570,17 +585,16 @@ const Project = () => {
                                 })}
                             </div>
                             {/* Input */}
-                            <div className="p-3 border-t border-[#21262d] shrink-0">
+                            <form onSubmit={send} className="p-3 border-t border-[#21262d] shrink-0">
                                 <div className="flex items-center gap-2 bg-[#0d1117] border border-[#30363d] rounded-xl px-3 py-2 focus-within:border-indigo-500/60">
                                     <input
                                         value={message}
                                         onChange={(e) => setMessage(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
                                         className="flex-1 bg-transparent text-white text-sm placeholder-[#484f58] outline-none"
                                         placeholder="Message, @ai, or @person@example.com ..."
                                     />
                                     <button
-                                        onClick={send}
+                                        type="submit"
                                         disabled={!message.trim()}
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shrink-0"
                                     >
@@ -588,7 +602,7 @@ const Project = () => {
                                     </button>
                                 </div>
                                 <p className="text-[#484f58] text-xs mt-1.5 text-center">Use <span className="text-violet-400 font-mono">@ai</span> for AI or <span className="text-indigo-400 font-mono">@email@example.com</span> to mention a teammate</p>
-                            </div>
+                            </form>
                         </>
                     )}
 
