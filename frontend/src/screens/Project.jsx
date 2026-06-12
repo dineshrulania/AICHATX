@@ -467,6 +467,13 @@ const Project = () => {
         setIsRunning(false)
     }
 
+    function logout() {
+        axios.get('/users/logout').finally(() => {
+            localStorage.removeItem('token')
+            navigate('/login')
+        })
+    }
+
     const collaboratorCount = project.users?.length || 0
 
     return (
@@ -514,6 +521,13 @@ const Project = () => {
                             ? <><i className="ri-loader-4-line animate-spin"></i><span>Running...</span></>
                             : <><i className="ri-play-fill"></i><span>Run</span></>
                         }
+                    </button>
+                    <button
+                        onClick={logout}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#21262d] text-xs font-medium"
+                    >
+                        <i className="ri-logout-box-r-line"></i>
+                        <span className="hidden sm:inline">Logout</span>
                     </button>
                 </div>
             </header>
