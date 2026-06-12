@@ -2,6 +2,12 @@ import userModel from '../models/user.model.js';
 import * as userService from '../services/user.service.js';
 import { validationResult } from 'express-validator';
 import redisClient from '../services/redis.service.js';
+import { createOtpChallenge, verifyOtpChallenge } from '../services/otp.service.js';
+import { sendVerificationOtpEmail } from '../services/email.service.js';
+
+function normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+}
 
 
 export const createUserController = async (req, res) => {
@@ -12,13 +18,33 @@ export const createUserController = async (req, res) => {
         return res.status(400).json({ errors: errors.array() });
     }
     try {
-        const user = await userService.createUser(req.body);
 
-        const token = await user.generateJWT();
+        const { email, password } = req.body;
+        const normalizedEmail = normalizeEmail(email);
 
-        delete user._doc.password;
+        const existingUser = await userModel.findOne({ email: normalizedEmail });
+        if (existingUser) {
+            return res.status(409).json({ error: 'User already exists' });
+        }
 
-        res.status(201).json({ user, token });
+        const passwordHash = await userModel.hashPassword(password);
+        const { otp } = await createOtpChallenge({
+            email: normalizedEmail,
+            purpose: 'register',
+            payload: { passwordHash },
+        });
+
+        await sendVerificationOtpEmail({
+            toEmail: normalizedEmail,
+            otp,
+            purpose: 'register',
+        });
+
+        return res.status(200).json({
+            message: 'Verification code sent to your email',
+            email: normalizedEmail,
+            requiresOtp: true,
+        });
     } catch (error) {
         res.status(400).send(error.message);
     }
@@ -34,8 +60,9 @@ export const loginController = async (req, res) => {
     try {
 
         const { email, password } = req.body;
+        const normalizedEmail = normalizeEmail(email);
 
-        const user = await userModel.findOne({ email }).select('+password');
+        const user = await userModel.findOne({ email: normalizedEmail }).select('+password');
 
         if (!user) {
             return res.status(401).json({
@@ -51,11 +78,23 @@ export const loginController = async (req, res) => {
             })
         }
 
-        const token = await user.generateJWT();
+        const { otp } = await createOtpChallenge({
+            email: normalizedEmail,
+            purpose: 'login',
+            payload: { userId: user._id.toString() },
+        });
 
-        delete user._doc.password;
+        await sendVerificationOtpEmail({
+            toEmail: normalizedEmail,
+            otp,
+            purpose: 'login',
+        });
 
-        res.status(200).json({ user, token });
+        return res.status(200).json({
+            message: 'Verification code sent to your email',
+            email: normalizedEmail,
+            requiresOtp: true,
+        });
 
 
     } catch (err) {
@@ -65,6 +104,74 @@ export const loginController = async (req, res) => {
         res.status(400).send(err.message);
     }
 }
+
+export const verifyRegisterOtpController = async (req, res) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { email, otp } = req.body;
+        const normalizedEmail = normalizeEmail(email);
+
+        const existingUser = await userModel.findOne({ email: normalizedEmail });
+        if (existingUser) {
+            return res.status(409).json({ error: 'User already exists' });
+        }
+
+        const { passwordHash } = await verifyOtpChallenge({
+            email: normalizedEmail,
+            purpose: 'register',
+            otp,
+        });
+
+        const user = await userModel.create({
+            email: normalizedEmail,
+            password: passwordHash,
+        });
+
+        const token = await user.generateJWT();
+        delete user._doc.password;
+
+        return res.status(201).json({ user, token });
+    } catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+};
+
+export const verifyLoginOtpController = async (req, res) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { email, otp } = req.body;
+        const normalizedEmail = normalizeEmail(email);
+
+        const { userId } = await verifyOtpChallenge({
+            email: normalizedEmail,
+            purpose: 'login',
+            otp,
+        });
+
+        const user = await userModel.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const token = await user.generateJWT();
+        delete user._doc.password;
+
+        return res.status(200).json({ user, token });
+    } catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+};
 
 export const profileController = async (req, res) => {
 

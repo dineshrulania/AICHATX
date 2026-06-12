@@ -12,10 +12,20 @@ router.post('/register',
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters long'),
     userController.createUserController);
 
+router.post('/register/verify-otp',
+    body('email').isEmail().withMessage('Email must be a valid email address'),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits long'),
+    userController.verifyRegisterOtpController);
+
 router.post('/login',
     body('email').isEmail().withMessage('Email must be a valid email address'),
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters long'),
     userController.loginController);
+
+router.post('/login/verify-otp',
+    body('email').isEmail().withMessage('Email must be a valid email address'),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits long'),
+    userController.verifyLoginOtpController);
 
 router.get('/profile', authMiddleware.authUser, userController.profileController);
 

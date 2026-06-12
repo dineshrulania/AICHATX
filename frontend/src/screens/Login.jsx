@@ -6,7 +6,10 @@ import { UserContext } from '../context/user.context'
 const Login = () => {
     const [ email, setEmail ] = useState('')
     const [ password, setPassword ] = useState('')
+    const [ otp, setOtp ] = useState('')
+    const [ step, setStep ] = useState('credentials') // credentials | otp
     const [ error, setError ] = useState('')
+    const [ info, setInfo ] = useState('')
     const [ loading, setLoading ] = useState(false)
 
     const { setUser } = useContext(UserContext)
@@ -17,15 +20,43 @@ const Login = () => {
     function submitHandler(e) {
         e.preventDefault()
         setError('')
+        setInfo('')
         setLoading(true)
-        axios.post('/users/login', { email, password })
+
+        const request = step === 'credentials'
+            ? axios.post('/users/login', { email, password })
+            : axios.post('/users/login/verify-otp', { email, otp })
+
+        request
             .then((res) => {
+                if (step === 'credentials') {
+                    setStep('otp')
+                    setInfo(res.data?.message || 'We sent a verification code to your email.')
+                    return
+                }
+
                 localStorage.setItem('token', res.data.token)
                 setUser(res.data.user)
                 navigate(redirect)
             })
             .catch((err) => {
-                setError(err.response?.data?.errors || 'Invalid email or password')
+                setError(err.response?.data?.error || err.response?.data?.errors || 'Invalid email or password')
+            })
+            .finally(() => setLoading(false))
+    }
+
+    function resendOtp() {
+        if (!email.trim() || !password.trim()) return
+        setError('')
+        setInfo('')
+        setLoading(true)
+        axios.post('/users/login', { email, password })
+            .then((res) => {
+                setStep('otp')
+                setInfo(res.data?.message || 'We sent a verification code to your email.')
+            })
+            .catch((err) => {
+                setError(err.response?.data?.error || err.response?.data?.errors || 'Invalid email or password')
             })
             .finally(() => setLoading(false))
     }
@@ -73,7 +104,16 @@ const Login = () => {
                     </div>
 
                     <h1 className="text-2xl font-semibold text-white mb-1">Welcome back</h1>
-                    <p className="text-[#8b949e] text-sm mb-8">Sign in to your workspace</p>
+                    <p className="text-[#8b949e] text-sm mb-8">
+                        {step === 'otp' ? 'Enter the verification code sent to your email' : 'Sign in to your workspace'}
+                    </p>
+
+                    {info && (
+                        <div className="mb-5 px-4 py-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm flex items-center gap-2">
+                            <i className="ri-mail-check-line shrink-0"></i>
+                            <span>{info}</span>
+                        </div>
+                    )}
 
                     {error && (
                         <div className="mb-5 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2">
@@ -88,25 +128,54 @@ const Login = () => {
                             <input
                                 type="email" value={email}
                                 onChange={(e) => setEmail(e.target.value)}
+                                disabled={step === 'otp'}
                                 className="w-full px-3.5 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] text-white placeholder-[#484f58] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
                                 placeholder="you@example.com" required
                             />
                         </div>
-                        <div>
-                            <label className="block text-[#cdd9e5] text-sm font-medium mb-1.5">Password</label>
-                            <input
-                                type="password" value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] text-white placeholder-[#484f58] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
-                                placeholder="••••••••" required
-                            />
-                        </div>
+                        {step === 'credentials' && (
+                            <div>
+                                <label className="block text-[#cdd9e5] text-sm font-medium mb-1.5">Password</label>
+                                <input
+                                    type="password" value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] text-white placeholder-[#484f58] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
+                                    placeholder="••••••••" required
+                                />
+                            </div>
+                        )}
+                        {step === 'otp' && (
+                            <div>
+                                <label className="block text-[#cdd9e5] text-sm font-medium mb-1.5">Verification code</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={otp}
+                                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                    className="w-full px-3.5 py-2.5 rounded-lg bg-[#161b22] border border-[#30363d] text-white placeholder-[#484f58] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm tracking-[0.35em] text-center"
+                                    placeholder="123456"
+                                    required
+                                />
+                            </div>
+                        )}
                         <button
                             type="submit" disabled={loading}
                             className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium text-sm flex items-center justify-center gap-2 mt-2"
                         >
-                            {loading ? <><i className="ri-loader-4-line animate-spin"></i>Signing in...</> : 'Sign in'}
+                            {loading
+                                ? <><i className="ri-loader-4-line animate-spin"></i>{step === 'otp' ? 'Verifying code...' : 'Sending code...'}</>
+                                : (step === 'otp' ? 'Verify code' : 'Send verification code')}
                         </button>
+                        {step === 'otp' && (
+                            <button
+                                type="button"
+                                onClick={resendOtp}
+                                disabled={loading}
+                                className="w-full py-2 rounded-lg bg-[#21262d] hover:bg-[#30363d] disabled:opacity-60 disabled:cursor-not-allowed text-[#cdd9e5] font-medium text-sm"
+                            >
+                                Resend code
+                            </button>
+                        )}
                     </form>
 
                     <p className="text-[#8b949e] text-sm text-center mt-6">
