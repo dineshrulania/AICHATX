@@ -114,11 +114,15 @@ const Project = () => {
 
         messageSendLockRef.current = true
         sendMessage('project-message', { message, sender: user })
-        setMessages(prev => [ ...prev, { sender: user, message: text } ])
         setMessage('')
         setTimeout(() => {
             messageSendLockRef.current = false
         }, 250)
+    }
+
+    const deleteMessage = (messageId) => {
+        if (!messageId) return
+        sendMessage('delete-message', { messageId })
     }
 
     function WriteAiMessage(msg) {
@@ -207,9 +211,16 @@ const Project = () => {
             }
         })
 
+        const offDeleteMessage = receiveMessage('delete-message', ({ messageId }) => {
+            setMessages(prev => prev.filter(m => m._id !== messageId))
+        })
+
         axios.get(`/projects/get-project/${location.state.project._id}`).then(res => {
             setProject(res.data.project)
             setFileTree(res.data.project.fileTree || {})
+            if (Array.isArray(res.data.messages)) {
+                setMessages(res.data.messages)
+            }
         })
 
         axios.get('/users/all').then(res => setUsers(res.data.users)).catch(console.log)
@@ -219,6 +230,7 @@ const Project = () => {
 
         return () => {
             offProjectMessage?.()
+            offDeleteMessage?.()
             socketCleanup?.disconnect?.()
             disconnectSocket()
         }
@@ -587,12 +599,32 @@ const Project = () => {
                                                     <span className="text-[#8b949e] text-xs">{isAi ? 'AI Assistant' : msg.sender.email}</span>
                                                 </div>
                                             )}
-                                            <div className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${
-                                                isAi ? 'w-full bg-transparent p-0' :
-                                                isOwn ? 'bg-indigo-600 text-white rounded-br-sm' :
-                                                'bg-[#21262d] text-[#cdd9e5] rounded-bl-sm'
-                                            }`}>
-                                                {isAi ? WriteAiMessage(msg.message) : <p className="leading-relaxed whitespace-pre-wrap">{renderChatMessage(msg.message, mentions)}</p>}
+                                            <div className="flex items-center gap-2 group w-full max-w-[95%]">
+                                                {isOwn && !isAi && msg._id && (
+                                                    <button
+                                                        onClick={() => deleteMessage(msg._id)}
+                                                        title="Delete message"
+                                                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/20 text-[#8b949e] hover:text-red-400 text-xs shrink-0 transition-opacity"
+                                                    >
+                                                        <i className="ri-delete-bin-line"></i>
+                                                    </button>
+                                                )}
+                                                <div className={`rounded-xl px-3 py-2 text-sm ${
+                                                    isAi ? 'w-full bg-transparent p-0' :
+                                                    isOwn ? 'bg-indigo-600 text-white rounded-br-sm' :
+                                                    'bg-[#21262d] text-[#cdd9e5] rounded-bl-sm'
+                                                }`}>
+                                                    {isAi ? WriteAiMessage(msg.message) : <p className="leading-relaxed whitespace-pre-wrap">{renderChatMessage(msg.message, mentions)}</p>}
+                                                </div>
+                                                {!isOwn && msg._id && (
+                                                    <button
+                                                        onClick={() => deleteMessage(msg._id)}
+                                                        title="Delete message"
+                                                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-500/20 text-[#8b949e] hover:text-red-400 text-xs shrink-0 transition-opacity"
+                                                    >
+                                                        <i className="ri-delete-bin-line"></i>
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     )

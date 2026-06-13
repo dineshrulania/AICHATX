@@ -1,6 +1,7 @@
 import projectModel from '../models/project.model.js';
 import * as projectService from '../services/project.service.js';
 import userModel from '../models/user.model.js';
+import messageModel from '../models/message.model.js';
 import { validationResult } from 'express-validator';
 
 
@@ -93,9 +94,28 @@ export const getProjectById = async (req, res) => {
     try {
 
         const project = await projectService.getProjectById({ projectId });
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        const loggedInUser = await userModel.findOne({ email: req.user.email });
+
+        let joinedAtDate = new Date(0); // fallback to start of time
+        if (loggedInUser) {
+            const uStr = loggedInUser._id.toString();
+            if (project.userJoinedAt && project.userJoinedAt.has(uStr)) {
+                joinedAtDate = project.userJoinedAt.get(uStr);
+            }
+        }
+
+        const messages = await messageModel.find({
+            project: projectId,
+            timestamp: { $gte: joinedAtDate }
+        }).sort({ timestamp: 1 });
 
         return res.status(200).json({
-            project
+            project,
+            messages
         })
 
     } catch (err) {

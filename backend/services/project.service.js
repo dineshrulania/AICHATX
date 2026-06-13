@@ -15,7 +15,10 @@ export const createProject = async ({
     try {
         project = await projectModel.create({
             name,
-            users: [ userId ]
+            users: [ userId ],
+            userJoinedAt: {
+                [userId.toString()]: new Date()
+            }
         });
     } catch (error) {
         if (error.code === 11000) {
@@ -79,19 +82,23 @@ export const addUsersToProject = async ({ projectId, users, userId }) => {
         throw new Error("User not belong to this project")
     }
 
-    const updatedProject = await projectModel.findOneAndUpdate({
-        _id: projectId
-    }, {
-        $addToSet: {
-            users: {
-                $each: users
-            }
-        }
-    }, {
-        new: true
-    })
+    const now = new Date();
+    if (!project.userJoinedAt) {
+        project.userJoinedAt = new Map();
+    }
 
-    return updatedProject
+    users.forEach(u => {
+        const uStr = u.toString();
+        if (!project.users.some(uid => uid.toString() === uStr)) {
+            project.users.push(u);
+        }
+        if (!project.userJoinedAt.has(uStr)) {
+            project.userJoinedAt.set(uStr, now);
+        }
+    });
+
+    await project.save();
+    return project;
 
 
 

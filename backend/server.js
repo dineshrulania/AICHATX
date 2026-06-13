@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import projectModel from './models/project.model.js';
+import messageModel from './models/message.model.js';
 import { generateResult } from './services/ai.service.js';
 import { registerTerminalSocket } from './controllers/execute.controller.js';
 
@@ -138,11 +139,34 @@ Important rules:
 
         const aiIsPresentInMessage = message.includes('@ai');
         const mentionedPeople = extractMentionedPeople(message);
-        const enrichedMessage = {
-            ...data,
-            mentions: mentionedPeople,
+
+        // 1. Create and save the message in DB
+        let savedMessage;
+        try {
+            savedMessage = await messageModel.create({
+                project: socket.project._id,
+                sender: {
+                    _id: data.sender._id,
+                    email: data.sender.email
+                },
+                message: message,
+                mentions: mentionedPeople,
+                timestamp: new Date()
+            });
+        } catch (err) {
+            console.error('Failed to save message:', err);
+            return;
         }
-        socket.broadcast.to(socket.roomId).emit('project-message', enrichedMessage)
+
+        // 2. Broadcast the saved message (with its DB _id) to everyone in the room
+        io.to(socket.roomId).emit('project-message', {
+            _id: savedMessage._id,
+            project: savedMessage.project,
+            sender: savedMessage.sender,
+            message: savedMessage.message,
+            mentions: savedMessage.mentions,
+            timestamp: savedMessage.timestamp
+        });
 
         if (aiIsPresentInMessage) {
 
@@ -150,43 +174,92 @@ Important rules:
                 const prompt = buildAiPrompt(message);
                 const result = await generateResult(prompt);
 
-                io.to(socket.roomId).emit('project-message', {
-                    message: result,
+                const savedAiMessage = await messageModel.create({
+                    project: socket.project._id,
                     sender: {
                         _id: 'ai',
                         email: 'AI'
-                    }
-                })
+                    },
+                    message: result,
+                    mentions: [],
+                    timestamp: new Date()
+                });
+
+                io.to(socket.roomId).emit('project-message', {
+                    _id: savedAiMessage._id,
+                    project: savedAiMessage.project,
+                    sender: savedAiMessage.sender,
+                    message: savedAiMessage.message,
+                    mentions: savedAiMessage.mentions,
+                    timestamp: savedAiMessage.timestamp
+                });
             } catch (error) {
                 console.error('AI generation error:', error.message || error);
-                io.to(socket.roomId).emit('project-message', {
-                    message: JSON.stringify({
-                        text: `AI is temporarily unavailable: ${error.message || 'Unknown error'}`
-                    }),
+                
+                const errText = JSON.stringify({
+                    text: `AI is temporarily unavailable: ${error.message || 'Unknown error'}`
+                });
+
+                const savedAiMessage = await messageModel.create({
+                    project: socket.project._id,
                     sender: {
                         _id: 'ai',
                         email: 'AI'
-                    }
-                })
+                    },
+                    message: errText,
+                    mentions: [],
+                    timestamp: new Date()
+                });
+
+                io.to(socket.roomId).emit('project-message', {
+                    _id: savedAiMessage._id,
+                    project: savedAiMessage.project,
+                    sender: savedAiMessage.sender,
+                    message: savedAiMessage.message,
+                    mentions: savedAiMessage.mentions,
+                    timestamp: savedAiMessage.timestamp
+                });
             }
 
             return
         }
 
         if (mentionedPeople.length > 0) {
-            io.to(socket.roomId).emit('project-message', {
-                message: JSON.stringify({
-                    text: `Mentioned teammate(s): ${mentionedPeople.map(email => `@${email}`).join(', ')}`,
-                    mentions: mentionedPeople,
-                }),
+            const mentionText = JSON.stringify({
+                text: `Mentioned teammate(s): ${mentionedPeople.map(email => `@${email}`).join(', ')}`,
+                mentions: mentionedPeople,
+            });
+
+            const savedAiMessage = await messageModel.create({
+                project: socket.project._id,
                 sender: {
                     _id: 'ai',
                     email: 'AI'
-                }
-            })
+                },
+                message: mentionText,
+                mentions: [],
+                timestamp: new Date()
+            });
+
+            io.to(socket.roomId).emit('project-message', {
+                _id: savedAiMessage._id,
+                project: savedAiMessage.project,
+                sender: savedAiMessage.sender,
+                message: savedAiMessage.message,
+                mentions: savedAiMessage.mentions,
+                timestamp: savedAiMessage.timestamp
+            });
         }
 
+    })
 
+    socket.on('delete-message', async ({ messageId }) => {
+        try {
+            await messageModel.deleteOne({ _id: messageId, project: socket.project._id });
+            io.to(socket.roomId).emit('delete-message', { messageId });
+        } catch (err) {
+            console.error('Failed to delete message:', err);
+        }
     })
 
     socket.on('disconnect', () => {

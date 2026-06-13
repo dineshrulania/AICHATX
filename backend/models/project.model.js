@@ -15,6 +15,11 @@ const projectSchema = new mongoose.Schema({
             ref: 'user'
         }
     ],
+    userJoinedAt: {
+        type: Map,
+        of: Date,
+        default: {}
+    },
     fileTree: {
         type: Object,
         default: {}

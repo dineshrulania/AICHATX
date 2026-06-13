@@ -133,9 +133,21 @@ export const acceptInvite = async (req, res) => {
         }
 
         // Add user to project
-        await projectModel.findByIdAndUpdate(invite.projectId, {
-            $addToSet: { users: user._id },
-        });
+        const projectDoc = await projectModel.findById(invite.projectId);
+        if (projectDoc) {
+            const alreadyMember = projectDoc.users.some(uid => uid.toString() === user._id.toString());
+            if (!alreadyMember) {
+                projectDoc.users.push(user._id);
+            }
+            if (!projectDoc.userJoinedAt) {
+                projectDoc.userJoinedAt = new Map();
+            }
+            const uStr = user._id.toString();
+            if (!projectDoc.userJoinedAt.has(uStr)) {
+                projectDoc.userJoinedAt.set(uStr, new Date());
+            }
+            await projectDoc.save();
+        }
 
         // Mark invite accepted
         invite.status = 'accepted';
