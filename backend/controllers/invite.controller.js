@@ -22,6 +22,15 @@ export const sendInvite = async (req, res) => {
         const project = await projectModel.findOne({ _id: projectId, users: inviter._id });
         if (!project) return res.status(403).json({ error: 'Project not found or access denied' });
 
+        // Determine frontend URL dynamically from Origin if environment variable is missing or points to localhost
+        const reqOrigin = req.headers.origin || req.get('origin');
+        let FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+        if (FRONTEND_URL.includes('localhost') && reqOrigin && !reqOrigin.includes('localhost')) {
+            FRONTEND_URL = reqOrigin;
+        } else if (!process.env.FRONTEND_URL && reqOrigin) {
+            FRONTEND_URL = reqOrigin;
+        }
+
         // Check for existing pending invite. If one exists, resend it instead of blocking the user.
         const existing = await Invite.findOne({
             projectId,
@@ -30,7 +39,6 @@ export const sendInvite = async (req, res) => {
             expiresAt: { $gt: new Date() },
         });
         if (existing) {
-            const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
             const inviteUrl = `${FRONTEND_URL}/invite/accept?token=${existing.token}`;
 
             try {
@@ -71,7 +79,6 @@ export const sendInvite = async (req, res) => {
         });
 
         // Build the accept URL
-        const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
         const inviteUrl = `${FRONTEND_URL}/invite/accept?token=${token}`;
 
         // Send email

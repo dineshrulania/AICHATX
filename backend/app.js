@@ -8,8 +8,13 @@ import executeRoutes from './routes/execute.routes.js';
 import inviteRoutes from './routes/invite.routes.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 connect();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -25,10 +30,23 @@ app.use("/ai", aiRoutes);
 app.use("/execute", executeRoutes);
 app.use("/invites", inviteRoutes);
 
+// Serve frontend static files if they exist (production deployment)
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDistPath));
 
-
-app.get('/', (req, res) => {
-    res.send('Hello World!');
+// Fallback for SPA routing: serve index.html for any unmatched non-API routes
+app.get('*', (req, res) => {
+    // If it's an API request, do not redirect to index.html; just return 404
+    const apiPrefixes = ['/users', '/projects', '/ai', '/execute', '/invites'];
+    if (apiPrefixes.some(prefix => req.path.startsWith(prefix))) {
+        return res.status(404).json({ error: 'Not Found' });
+    }
+    res.sendFile(path.join(frontendDistPath, 'index.html'), (err) => {
+        if (err) {
+            // If index.html doesn't exist, fall back to hello world or 404
+            res.status(404).send('Not Found (Static frontend build not found)');
+        }
+    });
 });
 
 export default app; 
